@@ -1,0 +1,133 @@
+//this file describes the format used for per device scripts
+//they contain entrypoints, data about flash, and ways
+//to identify the chip. what folows is an informal doc
+//filename is important after the first dot.
+//first comes the load address as an 8-digit hex number
+//then m0 or m3 to set proper compilation cpu type
+//then .S
+
+
+
+//everything starting here and ending at the footer is loaded into RAM
+
+.thumb
+.section .text
+
+//this section contains flash info about the chip (size, page size, etc)
+//it may be written by init code or be static and implemented here
+
+	//flash size in bytes
+	.word 8192
+	
+	//flash block size for erase/write block
+	.word 512
+
+	//flash base address
+	.word 0
+
+//this must be here exactly. it is used to make syscalls into the
+//debugger. It can be used to request things like having watchpoints
+//set. this is useful for chips where a built-in rom must run before we
+//can run code. Jumping here with peoper regiser values can be used to 
+//set and unset watchpoints. BL to here with R0 == 1 to clear a watchpoint,
+//call with R0 == 0 to set one. R1 = address, R2 = wpt size, R3 = wpt type
+//type is: 4 - watch pc, 5 - wpt on read, 6 - wpt on write, 7 - wpt on any
+//access. This is of use only in a few case.
+
+syscall:
+	nop
+	b syscall
+
+//now come the various entrypoints to the script. They MUST all be "BL"
+//instructions or ".word 0" words if such entrypoint doesnt exist. They all
+//end their execution with "BKPT" instruction
+
+//init stage 1. If necessary - perform chip init
+	bl init_stage_1
+
+//init stage 2. If necessary - perform chip init (called after stage 1)
+	.word 0
+
+//init stage 3. If necessary - perform chip init (called after stage 2)
+	.word 0
+	
+//mass erase the chip (if this script is capable of that)
+	bl all_erase
+
+//erase a page in the chip (if this script is capable of that). When called, r0 is page address
+	bl page_erase
+
+//write a page in the chip (if this script is capable of that). When called, r0 is page address. data is in staging area
+	bl write_page
+
+//custom command (if this script is capable of that). Reserved for future use
+	.word 0
+
+
+
+//actual code for all those things goes here. it must fit into ram and is loaded at the load address (see footer)
+//as much code as neede is here. footer (which comes next) is not loaded into ram
+
+
+
+
+//this is the footer. it is not written into ram but it provides info
+//about the chip and how to identify it.
+
+.align 4
+.section .text.2
+.globl info
+info:
+
+
+//here we have info about chip id if CPUID doesnt tell us enough
+//these are 3-tuples of the form: {u32 addr, u32 mask, u32 checkval}
+//we'll read a word at addr and only continue if it ANDed with mask
+//equals checkval. the number of these words is stored below in the
+//numCheckvals field. The comparison will always fail if memory is not
+//readable. This means that one can verify an address is readable
+//by setting the mask and match value to zero. This will always succeed
+//if the word is readable
+
+	.word someaddr
+	.word somevalmask
+	.word someval
+
+//now the fixed-length footer:
+	//load address of this code
+	.word 0x1fffff00
+
+	//flash staging area in ram
+	.word 0x20000100
+
+	//number of checkvals above
+	.word 0
+	
+	//tagetid on swd bus (most likely zero)
+	.word 0
+	
+	//cpuid value masks from cpuid (8 of them)
+	.word 0xffffffff
+	.word 0xffffffff
+	.word 0xffffffff
+	.word 0xffffffff
+	.word 0xffffffff
+	.word 0xffffffff
+	.word 0xffffffff
+	.word 0xffffffff
+	
+	//cpuid match values from cpuid (8 of them)
+	.word 0x00000002
+	.word 0x00000000
+	.word 0x00000000
+	.word 0x00000000
+	.word 0x00000006
+	.word 0x00000040
+	.word 0x0000005c
+	.word 0x00000000
+	
+	//this word must be zero
+	.word 0
+	
+	//human-friendly name for this cpu/script
+	.ascii "nRF5x"

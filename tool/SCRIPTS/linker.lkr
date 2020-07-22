@@ -1,0 +1,13 @@
+MEMORY
+{
+  memory (rx)  : ORIGIN = 0x0, LENGTH = 0xfffffffff
+}
+
+SECTIONS
+{
+  .text   :
+  {
+    *(.text)
+    *(.text.2)
+  }  > memory
+}

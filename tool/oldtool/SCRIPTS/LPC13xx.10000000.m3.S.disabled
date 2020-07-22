@@ -1,0 +1,214 @@
+.syntax unified
+.thumb
+.section .text
+
+//the bootloader entrypt for flash is 0x1fff1ff0
+//we have 4K of RAM at 0x10000000 or more
+
+//this code lives in start (0x10000000 - 0x10000100)
+//we start our sp at 0x10000400
+//we stage data at 0x10000400 too
+
+
+//entry points (also we breakpoint this place and use it as debugger call)
+.globl entrypts
+entrypts:
+
+	//flash size (will be replaced by init code)
+	flashsz:
+	.word 0
+	
+	//flash block size for erase/write
+	.word 4096
+
+	//flash base
+	.word 0
+
+	//syscall area
+syscall:
+1:
+	nop
+	b 1b
+
+	//init stage 1
+	bl init_stage_1
+	
+	//init stage 2
+	bl init_stage_2
+	
+	//init stage 3
+	.word 0
+	
+	//mass erase
+	bl all_erase
+	
+	//erase at address (uint32_t addr)
+	.word 0
+	
+	//write block  (uint32_t addr)
+	bl write_512b
+	
+	//custom command (...)
+	.word 0
+	
+
+.globl prepare_cmd
+prepare_cmd:
+	.word 50
+	.word 0
+	.word 7
+
+.globl erz_cmd
+erz_cmd:
+	.word 52
+	.word 0
+	.word 7
+	.word 12000
+
+.globl flash_cmd
+flash_cmd:
+	.word 51
+	.word 0 			//destination addr goes here
+	.word 0x10000400	//source
+	.word 4096			//4k bytes at a time
+	.word 12000
+
+.globl flash_ret_area
+flash_ret_area:
+	.word 0
+	.word 0
+
+.globl init_stage_1
+init_stage_1:
+
+	//setup watchpoint on 0x2fc  - when this is read flash is ready via bootloader making it so
+	movs  r0, #0 /* set watchpoint */
+	ldr   r1, =0x2fc
+	movs  r2, #2
+	movs  r3, #7
+	bl    syscall
+	
+	//jump to reset vector
+	ldr   r0, =0x1fff0000
+	ldmia r0, {r1, r2}
+	mov   sp, r1
+	bx    r2
+	
+	//done (but never reached because watchpoint)
+	bkpt
+
+
+.globl init_stage_2
+init_stage_2:
+	//clear watchpoint
+	movs  r0, #1 /* clear watchpoint */
+	bl    syscall
+
+	//setup SP
+	ldr   sp, =0x10000400
+	
+	//map flash at 0
+	ldr   r0, =0x40048000
+	mov   r1, #2
+	str   r1, [r0]
+	
+	//save IAP addr
+	ldr   r6, =0x1fff1ff1
+	
+	//identify how much flash we have
+	ldr   r0, =0x4003c000
+	ldr   r1, [r0]
+	bic   r1, r1, 0x40
+	orr   r2, r1, 0x40
+	str   r2, [r0]
+	ldr   r3, =0x440
+	ldr   r3, [r3]
+	str   r1, [r0]
+	add   r1, r3, #1
+	lsl   r1, #12		//r3 is last valid flash page number, r1 is flash size in bytes
+	ldr   r0, =flashsz
+	str   r1, [r0]
+	
+	ldr   r0, =prepare_cmd
+	str   r3, [r0, #8]
+	ldr   r0, =erz_cmd
+	str   r3, [r0, #8]
+	
+	//done
+	bkpt
+
+
+.globl all_erase
+all_erase:
+	ldr   r0, =prepare_cmd
+	ldr   r1, =flash_ret_area
+	blx   r6
+	
+	ldr   r0, =erz_cmd
+	ldr   r1, =flash_ret_area
+	blx   r6
+	
+	bkpt
+
+.globl write_512b	//addr param in r0
+write_512b:
+	mov   r7, r0
+	ldr   r0, =prepare_cmd
+	ldr   r1, =flash_ret_area
+	blx   r6
+	
+	ldr   r0, =flash_cmd
+	ldr   r1, =flash_ret_area
+	str   r7, [r0, #4]
+	blx   r6
+	
+	bkpt
+
+
+
+.align 4
+.section .text.2
+.globl info
+info:
+
+//checkvals (none)
+
+
+//now the fixed-length footer:
+	//load address of this code
+	.word 0x10000000
+
+	//flash staging area in ram
+	.word 0x10000400
+
+	//number of checkvals above
+	.word 0
+	
+	//tagetid on swd bus (most likely zero)
+	.word 0
+	
+	//cpuid value masks from cpuid (8 of them)
+	.word 0xffffffff
+	.word 0xffffffff
+	.word 0xffffffff
+	.word 0xffffffff
+	.word 0xffffffff
+	.word 0xffffffff
+	.word 0xffffffff
+	.word 0xffffffff
+	
+	//cpuid match values from cpuid (8 of them)
+	.word 0x000000xx
+	.word 0x000000xx
+	.word 0x000000xx
+	.word 0x000000xx
+	.word 0x000000xx
+	.word 0x000000xx
+	.word 0x000000xx
+	.word 0x000000xx
+	
+	//this word must be zero
+	.word 0
+	
+	//human-friendly name for this cpu/script
+	.ascii "NXP LPX13xx"

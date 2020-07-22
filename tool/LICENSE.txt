@@ -1,0 +1,9 @@
+This is the CortexProg Pc-side tool source distribution.
+It may be used only under the terms of this license. You
+may use these source files to build the CortexProg
+PC-side tool anytime you wish. You may not sell this
+tool or access to this tool. You must provide this souce
+package to anyone who requests it if you also gave them
+a binary you built from it. This license must accompany
+this source code and all of its derivatives and will
+apply to them all.
